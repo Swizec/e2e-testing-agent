@@ -1,65 +1,210 @@
 import OpenAI from "openai";
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 
 const openai = new OpenAI();
 
-const browser = await chromium.launch({
-    headless: false,
-    chromiumSandbox: true,
-    env: {},
-    args: ["--disable-extensions", "--disable-filesystem"],
-});
+async function handleModelAction(
+    page: Page,
+    action:
+        | OpenAI.Responses.ResponseComputerToolCall.Click
+        | OpenAI.Responses.ResponseComputerToolCall.DoubleClick
+        | OpenAI.Responses.ResponseComputerToolCall.Drag
+        | OpenAI.Responses.ResponseComputerToolCall.Keypress
+        | OpenAI.Responses.ResponseComputerToolCall.Move
+        | OpenAI.Responses.ResponseComputerToolCall.Screenshot
+        | OpenAI.Responses.ResponseComputerToolCall.Scroll
+        | OpenAI.Responses.ResponseComputerToolCall.Type
+        | OpenAI.Responses.ResponseComputerToolCall.Wait
+) {
+    // Given a computer action (e.g., click, double_click, scroll, etc.),
+    // execute the corresponding operation on the Playwright page.
 
-const page = await browser.newPage();
-await page.setViewportSize({ width: 1280, height: 720 });
-await page.goto("https://scalingfastbook.com");
+    const actionType = action.type;
 
-const screenshotBuffer = await page.screenshot({ type: "png" });
+    try {
+        switch (actionType) {
+            case "click": {
+                const { x, y, button = "left" } = action;
+                console.log(
+                    `Action: click at (${x}, ${y}) with button '${button}'`
+                );
+                await page.mouse.click(x, y, { button });
+                break;
+            }
 
-const response = await openai.responses.create({
-    model: "computer-use-preview",
-    tools: [
-        {
-            type: "computer_use_preview",
-            display_width: 1280,
-            display_height: 720,
-            environment: "browser",
+            case "scroll": {
+                const { x, y, scrollX, scrollY } = action;
+                console.log(
+                    `Action: scroll at (${x}, ${y}) with offsets (scrollX=${scrollX}, scrollY=${scrollY})`
+                );
+                await page.mouse.move(x, y);
+                await page.evaluate(`window.scrollBy(${scrollX}, ${scrollY})`);
+                break;
+            }
+
+            case "keypress": {
+                const { keys } = action;
+                for (const k of keys) {
+                    console.log(`Action: keypress '${k}'`);
+                    // A simple mapping for common keys; expand as needed.
+                    if (k.includes("ENTER")) {
+                        await page.keyboard.press("Enter");
+                    } else if (k.includes("SPACE")) {
+                        await page.keyboard.press(" ");
+                    } else {
+                        await page.keyboard.press(k);
+                    }
+                }
+                break;
+            }
+
+            case "type": {
+                const { text } = action;
+                console.log(`Action: type text '${text}'`);
+                await page.keyboard.type(text);
+                break;
+            }
+
+            case "wait": {
+                console.log(`Action: wait`);
+                await page.waitForTimeout(2000);
+                break;
+            }
+
+            case "screenshot": {
+                // Nothing to do as screenshot is taken at each turn
+                console.log(`Action: screenshot`);
+                break;
+            }
+
+            // Handle other actions here
+
+            default:
+                console.log("Unrecognized action:", action);
+        }
+    } catch (e) {
+        console.error("Error handling action", action, ":", e);
+    }
+}
+
+async function computerUseLoop(
+    page: Page,
+    response: OpenAI.Responses.Response
+): Promise<OpenAI.Responses.Response> {
+    /**
+     * Run the loop that executes computer actions until no 'computer_call' is found.
+     */
+    while (true) {
+        const computerCalls = response.output.filter(
+            (item) => item.type === "computer_call"
+        );
+        if (computerCalls.length === 0) {
+            console.log("No computer call found. Output from model:");
+            response.output.forEach((item) => {
+                console.log(JSON.stringify(item, null, 2));
+            });
+            break; // Exit when no computer calls are issued.
+        }
+
+        // We expect at most one computer call per response.
+        const computerCall = computerCalls[0];
+        const lastCallId = computerCall?.call_id;
+        const action = computerCall?.action;
+
+        if (action) {
+            // Execute the action (function defined in step 3)
+            handleModelAction(page, action);
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Allow time for changes to take effect.
+        }
+
+        // Take a screenshot after the action (function defined in step 4)
+        const screenshotBytes = await page.screenshot();
+        const screenshotBase64 =
+            Buffer.from(screenshotBytes).toString("base64");
+
+        // Send the screenshot back as a computer_call_output
+        response = await openai.responses.create({
+            model: "computer-use-preview",
+            previous_response_id: response.id,
+            tools: [
+                {
+                    type: "computer_use_preview",
+                    display_width: 1024,
+                    display_height: 768,
+                    environment: "browser",
+                },
+            ],
+            input: [
+                {
+                    call_id: lastCallId,
+                    type: "computer_call_output",
+                    output: {
+                        type: "input_image",
+                        image_url: `data:image/png;base64,${screenshotBase64}`,
+                    },
+                },
+            ],
+            truncation: "auto",
+        });
+    }
+
+    return response;
+}
+
+async function test(url: string, goal: string, onTestEnd: () => void) {
+    const openai = new OpenAI();
+    const browser = await chromium.launch({
+        headless: false,
+        chromiumSandbox: true,
+        env: {},
+        args: ["--disable-extensions", "--disable-filesystem"],
+    });
+
+    const displayWidth = 1280;
+    const displayHeight = 720;
+
+    const page = await browser.newPage();
+    await page.setViewportSize({
+        width: displayWidth,
+        height: displayHeight,
+    });
+    await page.goto(url);
+
+    const response = await openai.responses.create({
+        model: "computer-use-preview",
+        tools: [
+            {
+                type: "computer_use_preview",
+                display_width: displayWidth,
+                display_height: displayHeight,
+                environment: "browser",
+            },
+        ],
+        input: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "input_text",
+                        text: goal,
+                    },
+                ],
+            },
+        ],
+        reasoning: {
+            summary: "concise",
         },
-    ],
-    input: [
-        {
-            role: "user",
-            content:
-                "Sign up for a preview of the Scaling Fast book at scalingfastbook.com",
-        },
-    ],
-    reasoning: { summary: "concise" },
-    truncation: "auto",
-});
+        truncation: "auto",
+    });
 
-await browser.close();
+    await computerUseLoop(page, response);
 
-console.log(response.output);
+    await browser.close();
+    onTestEnd();
+}
 
-// const browser = await chromium.launch({
-//     headless: false,
-//     chromiumSandbox: true,
-//     env: {},
-//     args: ["--disable-extensions", "--disable-filesystem"],
-// });
-
-// const page = await browser.newPage();
-// await page.setViewportSize({ width: 1280, height: 720 });
-// await page.goto("https://scalingfastbook.com");
-// await page.waitForTimeout(10000);
-
-// browser.close();
-
-// const client = new OpenAI();
-
-// const response = await client.responses.create({
-//     model: "gpt-5-nano",
-//     input: "Write a super short bed time story about a unicorn who learns to code in JavaScript.",
-// });
-
-// console.log(response.output_text);
+await test(
+    "https://scalingfastbook.com",
+    "Sign up for a preview of the Scaling Fast book",
+    () => {}
+);
