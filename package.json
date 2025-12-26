@@ -12,6 +12,7 @@
         "typescript": "^5"
     },
     "dependencies": {
+        "@faker-js/faker": "^10.1.0",
         "openai": "^6.15.0",
         "playwright": "^1.57.0"
     }

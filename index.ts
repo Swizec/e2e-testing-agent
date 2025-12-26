@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { chromium, type Page } from "playwright";
+import { faker } from "@faker-js/faker";
 
 const openai = new OpenAI();
 
@@ -87,6 +88,23 @@ async function handleModelAction(
     }
 }
 
+const fakerTools: OpenAI.Responses.FunctionTool[] = [
+    {
+        type: "function",
+        name: "get_email",
+        strict: false,
+        description: "Generates an email address.",
+        parameters: {},
+    },
+    {
+        type: "function",
+        name: "get_name",
+        strict: false,
+        description: "Generates a person's full name.",
+        parameters: {},
+    },
+];
+
 async function computerUseLoop(
     page: Page,
     response: OpenAI.Responses.Response
@@ -95,11 +113,36 @@ async function computerUseLoop(
      * Run the loop that executes computer actions until no 'computer_call' is found.
      */
     while (true) {
+        const toolCalls = response.output.filter(
+            (item) => item.type === "function_call"
+        );
+        const functionCallOutputs = [];
+
+        for (const toolCall of toolCalls) {
+            if (toolCall.type === "function_call") {
+                functionCallOutputs.push({
+                    call_id: toolCall.call_id,
+                    type: "function_call_output",
+                    output: (() => {
+                        switch (toolCall.name) {
+                            case "get_email":
+                                return faker.internet.email();
+                            case "get_name":
+                                return faker.person.fullName();
+                            default:
+                                return `Unknown function: ${toolCall.name}`;
+                        }
+                    })(),
+                });
+            }
+        }
+
         const computerCalls = response.output.filter(
             (item) => item.type === "computer_call"
         );
-        if (computerCalls.length === 0) {
-            console.log("No computer call found. Output from model:");
+
+        if (computerCalls.length === 0 && functionCallOutputs.length === 0) {
+            console.log("No computer or tool calls found. Final output:");
             response.output.forEach((item) => {
                 console.log(JSON.stringify(item, null, 2));
             });
@@ -114,7 +157,7 @@ async function computerUseLoop(
         if (action) {
             // Execute the action (function defined in step 3)
             handleModelAction(page, action);
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Allow time for changes to take effect.
+            await new Promise((resolve) => setTimeout(resolve, 500)); // Allow time for changes to take effect.
         }
 
         // Take a screenshot after the action (function defined in step 4)
@@ -133,6 +176,7 @@ async function computerUseLoop(
                     display_height: 768,
                     environment: "browser",
                 },
+                ...fakerTools,
             ],
             input: [
                 {
@@ -143,6 +187,7 @@ async function computerUseLoop(
                         image_url: `data:image/png;base64,${screenshotBase64}`,
                     },
                 },
+                ...functionCallOutputs,
             ],
             truncation: "auto",
         });
@@ -179,6 +224,7 @@ async function test(url: string, goal: string, onTestEnd: () => void) {
                 display_height: displayHeight,
                 environment: "browser",
             },
+            ...fakerTools,
         ],
         input: [
             {
