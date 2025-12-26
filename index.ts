@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { chromium, type Page } from "playwright";
 import { faker } from "@faker-js/faker";
+import { v7 as uuid } from "uuid";
 
 const openai = new OpenAI();
 
@@ -105,6 +106,37 @@ const fakerTools: OpenAI.Responses.FunctionTool[] = [
     },
 ];
 
+function handleFunctionCalls(
+    response: OpenAI.Responses.Response
+): OpenAI.Responses.ResponseFunctionToolCallOutputItem[] {
+    const toolCalls = response.output.filter(
+        (item) => item.type === "function_call"
+    );
+    const functionCallOutputs = [];
+
+    for (const toolCall of toolCalls) {
+        if (toolCall.type === "function_call") {
+            functionCallOutputs.push({
+                id: toolCall.call_id.replace(/^call_/, "fc_"),
+                call_id: toolCall.call_id,
+                type: "function_call_output",
+                output: (() => {
+                    switch (toolCall.name) {
+                        case "get_email":
+                            return faker.internet.email();
+                        case "get_name":
+                            return faker.person.fullName();
+                        default:
+                            return `Unknown function: ${toolCall.name}`;
+                    }
+                })(),
+            });
+        }
+    }
+
+    return functionCallOutputs;
+}
+
 async function computerUseLoop(
     page: Page,
     response: OpenAI.Responses.Response
@@ -112,30 +144,12 @@ async function computerUseLoop(
     /**
      * Run the loop that executes computer actions until no 'computer_call' is found.
      */
-    while (true) {
-        const toolCalls = response.output.filter(
-            (item) => item.type === "function_call"
-        );
-        const functionCallOutputs = [];
+    const computerCallStack = [];
 
-        for (const toolCall of toolCalls) {
-            if (toolCall.type === "function_call") {
-                functionCallOutputs.push({
-                    call_id: toolCall.call_id,
-                    type: "function_call_output",
-                    output: (() => {
-                        switch (toolCall.name) {
-                            case "get_email":
-                                return faker.internet.email();
-                            case "get_name":
-                                return faker.person.fullName();
-                            default:
-                                return `Unknown function: ${toolCall.name}`;
-                        }
-                    })(),
-                });
-            }
-        }
+    while (true) {
+        console.log(response.output);
+
+        const functionCallOutputs = handleFunctionCalls(response);
 
         const computerCalls = response.output.filter(
             (item) => item.type === "computer_call"
@@ -149,21 +163,40 @@ async function computerUseLoop(
             break; // Exit when no computer calls are issued.
         }
 
-        // We expect at most one computer call per response.
-        const computerCall = computerCalls[0];
-        const lastCallId = computerCall?.call_id;
-        const action = computerCall?.action;
+        let hasNewAction = false;
 
-        if (action) {
+        if (computerCalls[0]) {
+            computerCallStack.push(computerCalls[0]);
+            hasNewAction = true;
+        }
+
+        // We expect at most one computer call per response.
+        const lastCallId =
+            computerCallStack[computerCallStack.length - 1]?.call_id;
+        const action = computerCallStack[computerCallStack.length - 1]?.action;
+
+        if (hasNewAction && action) {
             // Execute the action (function defined in step 3)
             handleModelAction(page, action);
             await new Promise((resolve) => setTimeout(resolve, 500)); // Allow time for changes to take effect.
         }
 
-        // Take a screenshot after the action (function defined in step 4)
+        // Take a screenshot after the action
         const screenshotBytes = await page.screenshot();
         const screenshotBase64 =
             Buffer.from(screenshotBytes).toString("base64");
+
+        console.log("Calling model with screenshot and tool outputs...");
+        console.log([
+            {
+                call_id: lastCallId,
+                type: "computer_call_output",
+                output: {
+                    type: "input_image",
+                },
+            },
+            ...functionCallOutputs,
+        ]);
 
         // Send the screenshot back as a computer_call_output
         response = await openai.responses.create({
@@ -232,7 +265,7 @@ async function test(url: string, goal: string, onTestEnd: () => void) {
                 content: [
                     {
                         type: "input_text",
-                        text: goal,
+                        text: `You are in a browser navigated to ${url}. ${goal}`,
                     },
                 ],
             },
