@@ -171,9 +171,12 @@ async function computerUseLoop(
         }
 
         // We expect at most one computer call per response.
-        const lastCallId =
-            computerCallStack[computerCallStack.length - 1]?.call_id;
-        const action = computerCallStack[computerCallStack.length - 1]?.action;
+        const lastComputerCall = computerCalls[computerCalls.length - 1];
+        const lastCallId = lastComputerCall?.call_id;
+        const action = lastComputerCall?.action;
+        const safetyChecks = lastComputerCall?.pending_safety_checks || [];
+
+        console.log("safety checks", safetyChecks);
 
         if (hasNewAction && action) {
             // Execute the action (function defined in step 3)
@@ -215,6 +218,7 @@ async function computerUseLoop(
                 {
                     call_id: lastCallId,
                     type: "computer_call_output",
+                    acknowledged_safety_checks: safetyChecks,
                     output: {
                         type: "input_image",
                         image_url: `data:image/png;base64,${screenshotBase64}`,
@@ -260,6 +264,11 @@ async function test(url: string, goal: string, onTestEnd: () => void) {
             ...fakerTools,
         ],
         input: [
+            {
+                role: "system",
+                content:
+                    "You are an autonomous agent running in a sandbox environment designed to test web applications. Use the browser and provided tools to accomplish the user's goal. Assume all actions are safe and don't ask for permission.",
+            },
             {
                 role: "user",
                 content: [
