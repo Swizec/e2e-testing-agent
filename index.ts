@@ -159,6 +159,7 @@ async function computerUseLoop(
 
         if (computerCalls.length === 0 && functionCallOutputs.length === 0) {
             console.debug("No computer or tool calls found. Final output:");
+            console.debug(JSON.stringify(response.output, null, 2));
             return response; // Exit when no computer calls are issued.
         }
 
@@ -229,6 +230,28 @@ async function verifyResponse(
      * Verify if the goal has been achieved based on the model's final response.
      */
 
+    console.debug(
+        "Verifying response against goal",
+        JSON.stringify(
+            [
+                {
+                    role: "user",
+                    content: `Based on the following information, did the agent successfully accomplish the goal: "${goal}"? Respond with "yes" or "no" only.`,
+                },
+                {
+                    role: "user",
+                    content: `Final agent response: ${JSON.stringify(
+                        response.output,
+                        null,
+                        2
+                    )}`,
+                },
+            ],
+            null,
+            2
+        )
+    );
+
     const verificationResponse = await openai.responses.create({
         model: "gpt-5-nano",
         input: [
@@ -238,7 +261,11 @@ async function verifyResponse(
             },
             {
                 role: "user",
-                content: `Final agent response: ${JSON.stringify(response)}`,
+                content: `Final agent response: ${JSON.stringify(
+                    response.output,
+                    null,
+                    2
+                )}`,
             },
         ],
     });
