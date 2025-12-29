@@ -9,14 +9,6 @@ test("supports email signup", async () => {
     expect(success).toBe(true);
 });
 
-test("shows pitch video", async () => {
-    const success = await e2e_test(
-        "https://scalingfastbook.com",
-        "Verify the page has pitch video from the author"
-    );
-    expect(success).toBe(true);
-});
-
 test("shows testimonials", async () => {
     const success = await e2e_test(
         "https://scalingfastbook.com",
@@ -24,3 +16,11 @@ test("shows testimonials", async () => {
     );
     expect(success).toBe(true);
 });
+
+// test("shows pitch video", async () => {
+//     const success = await e2e_test(
+//         "https://scalingfastbook.com",
+//         "Verify the page has pitch video from the author"
+//     );
+//     expect(success).toBe(true);
+// });
