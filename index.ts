@@ -243,11 +243,19 @@ async function verifyResponse(
         ],
     });
 
+    console.log(JSON.stringify(verificationResponse.output, null, 2));
+
     const answer = verificationResponse.output
         .map((item) => {
             if (item.type === "message") {
-                return item.content.toString().toLowerCase();
+                return item.content
+                    .filter((c) => c.type === "output_text")
+                    .map((c) => c.text)
+                    .join(" ")
+                    .toString()
+                    .toLowerCase();
             }
+            return "";
         })
         .join(" ");
 
