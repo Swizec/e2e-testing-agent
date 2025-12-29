@@ -35,12 +35,14 @@ async function handleModelAction(
             }
 
             case "scroll": {
-                const { x, y, scrollX, scrollY } = action;
+                const { x, y, scroll_x, scroll_y } = action;
                 console.log(
-                    `Action: scroll at (${x}, ${y}) with offsets (scrollX=${scrollX}, scrollY=${scrollY})`
+                    `Action: scroll at (${x}, ${y}) with offsets (scrollX=${scroll_x}, scrollY=${scroll_y})`
                 );
                 await page.mouse.move(x, y);
-                await page.evaluate(`window.scrollBy(${scrollX}, ${scrollY})`);
+                await page.evaluate(
+                    `window.scrollBy(${scroll_x}, ${scroll_y})`
+                );
                 break;
             }
 
@@ -147,7 +149,7 @@ async function computerUseLoop(
     const computerCallStack = [];
 
     while (true) {
-        console.log(response.output);
+        console.debug(response.output);
 
         const functionCallOutputs = handleFunctionCalls(response);
 
@@ -156,11 +158,8 @@ async function computerUseLoop(
         );
 
         if (computerCalls.length === 0 && functionCallOutputs.length === 0) {
-            console.log("No computer or tool calls found. Final output:");
-            response.output.forEach((item) => {
-                console.log(JSON.stringify(item, null, 2));
-            });
-            break; // Exit when no computer calls are issued.
+            console.debug("No computer or tool calls found. Final output:");
+            return response; // Exit when no computer calls are issued.
         }
 
         let hasNewAction = false;
@@ -177,12 +176,12 @@ async function computerUseLoop(
         const action = lastComputerCall?.action;
         const safetyChecks = lastComputerCall?.pending_safety_checks || [];
 
-        console.log("safety checks", safetyChecks);
+        console.debug("safety checks", safetyChecks);
 
         if (hasNewAction && action) {
             // Execute the action (function defined in step 3)
             handleModelAction(page, action);
-            await new Promise((resolve) => setTimeout(resolve, 500)); // Allow time for changes to take effect.
+            await new Promise((resolve) => setTimeout(resolve, 200)); // Allow time for changes to take effect.
         }
 
         // Take a screenshot after the action
@@ -190,17 +189,7 @@ async function computerUseLoop(
         const screenshotBase64 =
             Buffer.from(screenshotBytes).toString("base64");
 
-        console.log("Calling model with screenshot and tool outputs...");
-        console.log([
-            {
-                call_id: lastCallId,
-                type: "computer_call_output",
-                output: {
-                    type: "input_image",
-                },
-            },
-            ...functionCallOutputs,
-        ]);
+        console.debug("Calling model with screenshot and tool outputs...");
 
         // Send the screenshot back as a computer_call_output
         response = await openai.responses.create({
@@ -234,7 +223,7 @@ async function computerUseLoop(
     return response;
 }
 
-async function test(url: string, goal: string, onTestEnd: () => void) {
+export async function e2e_test(url: string, goal: string): Promise<boolean> {
     const openai = new OpenAI();
     const browser = await chromium.launch({
         headless: false,
@@ -286,14 +275,14 @@ async function test(url: string, goal: string, onTestEnd: () => void) {
         truncation: "auto",
     });
 
-    await computerUseLoop(page, response);
+    const finalResponse = await computerUseLoop(page, response);
+
+    finalResponse.output.forEach((item) => {
+        console.log(JSON.stringify(item, null, 2));
+    });
 
     await browser.close();
-    onTestEnd();
-}
 
-await test(
-    "https://scalingfastbook.com",
-    "Sign up for a preview of the Scaling Fast book",
-    () => {}
-);
+    // TODO: how do we detect false?
+    return true;
+}
