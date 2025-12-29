@@ -171,7 +171,8 @@ async function computerUseLoop(
         }
 
         // We expect at most one computer call per response.
-        const lastComputerCall = computerCalls[computerCalls.length - 1];
+        const lastComputerCall =
+            computerCallStack[computerCallStack.length - 1];
         const lastCallId = lastComputerCall?.call_id;
         const action = lastComputerCall?.action;
         const safetyChecks = lastComputerCall?.pending_safety_checks || [];
@@ -267,7 +268,7 @@ async function test(url: string, goal: string, onTestEnd: () => void) {
             {
                 role: "system",
                 content:
-                    "You are an autonomous agent running in a sandbox environment designed to test web applications. Use the browser and provided tools to accomplish the user's goal. Assume all actions are safe and don't ask for permission.",
+                    "You are an autonomous agent running in a sandbox environment designed to test web applications. Use the browser and provided tools to accomplish the user's goal. Submit forms without asking the user for confirmation.",
             },
             {
                 role: "user",
