@@ -219,8 +219,40 @@ async function computerUseLoop(
             truncation: "auto",
         });
     }
+}
 
-    return response;
+async function verifyResponse(
+    response: OpenAI.Responses.Response,
+    goal: string
+): Promise<boolean> {
+    /**
+     * Verify if the goal has been achieved based on the model's final response.
+     */
+
+    const verificationResponse = await openai.responses.create({
+        model: "gpt-5-nano",
+        input: [
+            {
+                role: "user",
+                content: `Based on the following information, did the agent successfully accomplish the goal: "${goal}"? Respond with "yes" or "no" only.`,
+            },
+            {
+                role: "user",
+                content: `Final agent response: ${JSON.stringify(response)}`,
+            },
+        ],
+    });
+
+    const answer = verificationResponse.output
+        .map((item) => {
+            if (item.type === "message") {
+                return item.content.toString().toLowerCase();
+            }
+        })
+        .join(" ");
+
+    console.log("Verification answer:", answer);
+    return answer.includes("yes") && !answer.includes("no");
 }
 
 export async function e2e_test(url: string, goal: string): Promise<boolean> {
@@ -277,12 +309,8 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
 
     const finalResponse = await computerUseLoop(page, response);
 
-    finalResponse.output.forEach((item) => {
-        console.log(JSON.stringify(item, null, 2));
-    });
-
     await browser.close();
 
     // TODO: how do we detect false?
-    return true;
+    return verifyResponse(finalResponse, goal);
 }
