@@ -447,7 +447,9 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
         response
     );
 
-    await storeComputerCallStack(url, goal, computerCallStack);
+    if (!restoredFromSavedStack) {
+        await storeComputerCallStack(url, goal, computerCallStack);
+    }
 
     browser.close();
 
