@@ -405,6 +405,9 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
         page
     );
 
+    const screenshotBytes = await page.screenshot();
+    const screenshotBase64 = Buffer.from(screenshotBytes).toString("base64");
+
     const response = await openai.responses.create({
         model: "computer-use-preview",
         tools: [
@@ -432,6 +435,11 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
                                 ? "Your previous actions towards the goal have been restored to reach current state."
                                 : ""
                         }`,
+                    },
+                    {
+                        type: "input_image",
+                        image_url: `data:image/png;base64,${screenshotBase64}`,
+                        detail: "high",
                     },
                 ],
             },
