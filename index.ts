@@ -360,7 +360,7 @@ async function fastForwardComputerCallStack(
     url: string,
     goal: string,
     page: Page
-) {
+): boolean {
     const computerCallStack = await restoreComputerCallStack(url, goal);
 
     if (computerCallStack) {
@@ -376,6 +376,8 @@ async function fastForwardComputerCallStack(
             }
         }
     }
+
+    return !!computerCallStack;
 }
 
 export async function e2e_test(url: string, goal: string): Promise<boolean> {
@@ -397,7 +399,11 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
     });
     await page.goto(url);
 
-    await fastForwardComputerCallStack(url, goal, page);
+    const restoredFromSavedStack = await fastForwardComputerCallStack(
+        url,
+        goal,
+        page
+    );
 
     const response = await openai.responses.create({
         model: "computer-use-preview",
@@ -421,7 +427,11 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
                 content: [
                     {
                         type: "input_text",
-                        text: `You are in a browser navigated to ${url}. ${goal}`,
+                        text: `You are in a browser navigated to ${url}. ${goal}. ${
+                            restoredFromSavedStack
+                                ? "Your previous actions towards the goal have been restored to reach current state."
+                                : ""
+                        }`,
                     },
                 ],
             },
