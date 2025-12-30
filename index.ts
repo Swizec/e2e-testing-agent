@@ -108,6 +108,7 @@ const fakerTools: OpenAI.Responses.FunctionTool[] = [
     },
 ];
 
+// TODO: support all Faker functions
 function handleFunctionCalls(
     response: OpenAI.Responses.Response
 ): OpenAI.Responses.ResponseFunctionToolCallOutputItem[] {
@@ -142,9 +143,9 @@ function handleFunctionCalls(
 async function computerUseLoop(
     page: Page,
     response: OpenAI.Responses.Response
-): Promise<OpenAI.Responses.Response> {
+): Promise<[OpenAI.Responses.Response, any[]]> {
     /**
-     * Run the loop that executes computer actions until no 'computer_call' is found.
+     * Run the loop that executes computer actions and tool calls until no 'computer_call' or 'function_call' is found.
      */
     const computerCallStack = [];
 
@@ -222,10 +223,14 @@ async function computerUseLoop(
         });
     }
 
-    return response;
+    // TODO: store this to skip forward next time
+    // console.debug("ALL Computer calls executed:");
+    // console.debug(JSON.stringify(computerCallStack, null, 2));
+
+    return [response, computerCallStack];
 }
 
-async function verifyResponse(
+async function verifyGoalAchieved(
     response: OpenAI.Responses.Response,
     goal: string
 ): Promise<boolean> {
@@ -289,8 +294,88 @@ async function verifyResponse(
         })
         .join(" ");
 
-    console.log("Verification answer:", answer);
+    console.debug("Verification answer:", answer);
     return answer.includes("yes") && !answer.includes("no");
+}
+
+async function storeComputerCallStack(
+    url: string,
+    goal: string,
+    computerCallStack: any[]
+) {
+    /**
+     * Store the computer call stack for future reference.
+     */
+    // write to a file named with a md5 hash of the url and goal
+    const fs = await import("fs/promises");
+    const crypto = await import("crypto");
+
+    const hash = crypto
+        .createHash("md5")
+        .update(url + goal)
+        .digest("hex");
+    const filename = `computer_call_stacks/${hash}.json`;
+
+    await fs.mkdir("computer_call_stacks", { recursive: true });
+    await fs.writeFile(
+        filename,
+        JSON.stringify(
+            {
+                url,
+                goal,
+                computerCallStack,
+            },
+            null,
+            2
+        )
+    );
+}
+
+async function restoreComputerCallStack(
+    url: string,
+    goal: string
+): Promise<any[] | null> {
+    /**
+     * Restore the computer call stack if it exists.
+     */
+    const fs = await import("fs/promises");
+    const crypto = await import("crypto");
+
+    const hash = crypto
+        .createHash("md5")
+        .update(url + goal)
+        .digest("hex");
+    const filename = `computer_call_stacks/${hash}.json`;
+
+    try {
+        const data = await fs.readFile(filename, "utf-8");
+        const parsed = JSON.parse(data);
+        return parsed.computerCallStack;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function fastForwardComputerCallStack(
+    url: string,
+    goal: string,
+    page: Page
+) {
+    const computerCallStack = await restoreComputerCallStack(url, goal);
+
+    if (computerCallStack) {
+        console.debug(
+            `Restoring previous computer call stack with ${computerCallStack.length} actions...`
+        );
+
+        for (const call of computerCallStack) {
+            const action = call.action;
+            if (action) {
+                await handleModelAction(page, action);
+                await new Promise((resolve) => setTimeout(resolve, 200)); // Allow time for changes to take effect.
+            }
+        }
+    }
 }
 
 export async function e2e_test(url: string, goal: string): Promise<boolean> {
@@ -311,6 +396,8 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
         height: displayHeight,
     });
     await page.goto(url);
+
+    await fastForwardComputerCallStack(url, goal, page);
 
     const response = await openai.responses.create({
         model: "computer-use-preview",
@@ -345,14 +432,17 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
         truncation: "auto",
     });
 
-    const finalResponse = await computerUseLoop(page, response);
-    console.debug("got out of test");
+    const [finalResponse, computerCallStack] = await computerUseLoop(
+        page,
+        response
+    );
+
+    await storeComputerCallStack(url, goal, computerCallStack);
 
     browser.close();
 
-    console.debug("Verifying response");
-    const passed = await verifyResponse(finalResponse, goal);
+    console.debug("Verifying goal achieved");
+    const passed = await verifyGoalAchieved(finalResponse, goal);
 
-    // TODO: how do we detect false?
     return passed;
 }
