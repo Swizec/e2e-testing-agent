@@ -278,7 +278,55 @@ async function verifyGoalAchieved(
         ],
     });
 
-    console.log(JSON.stringify(verificationResponse.output, null, 2));
+    console.debug(JSON.stringify(verificationResponse.output, null, 2));
+
+    const answer = verificationResponse.output
+        .map((item) => {
+            if (item.type === "message") {
+                return item.content
+                    .filter((c) => c.type === "output_text")
+                    .map((c) => c.text)
+                    .join(" ")
+                    .toString()
+                    .toLowerCase();
+            }
+            return "";
+        })
+        .join(" ");
+
+    console.debug("Verification answer:", answer);
+    return answer.includes("yes") && !answer.includes("no");
+}
+
+async function verifyGoalAchievedFromScreenshot(
+    screenshotBase64: string,
+    goal: string
+): Promise<boolean> {
+    /**
+     * Verify if the goal has been achieved based on the model's final response.
+     */
+
+    const verificationResponse = await openai.responses.create({
+        model: "gpt-5-nano",
+        input: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "input_text",
+                        text: `Based on the following information, did the agent successfully accomplish the goal: "${goal}"? Respond with "yes" or "no" only.`,
+                    },
+                    {
+                        type: "input_image",
+                        image_url: `data:image/png;base64,${screenshotBase64}`,
+                        detail: "high",
+                    },
+                ],
+            },
+        ],
+    });
+
+    console.debug(JSON.stringify(verificationResponse.output, null, 2));
 
     const answer = verificationResponse.output
         .map((item) => {
@@ -360,7 +408,7 @@ async function fastForwardComputerCallStack(
     url: string,
     goal: string,
     page: Page
-): boolean {
+): Promise<boolean> {
     const computerCallStack = await restoreComputerCallStack(url, goal);
 
     if (computerCallStack) {
@@ -408,6 +456,17 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
     const screenshotBytes = await page.screenshot();
     const screenshotBase64 = Buffer.from(screenshotBytes).toString("base64");
 
+    if (restoredFromSavedStack) {
+        console.debug("Verifying goal achieved");
+        const passed = await verifyGoalAchievedFromScreenshot(
+            screenshotBase64,
+            goal
+        );
+        browser.close();
+
+        return passed;
+    }
+
     const response = await openai.responses.create({
         model: "computer-use-preview",
         tools: [
@@ -430,11 +489,7 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
                 content: [
                     {
                         type: "input_text",
-                        text: `You are in a browser navigated to ${url}. ${goal}. ${
-                            restoredFromSavedStack
-                                ? "Your previous actions towards the goal have been restored to reach current state."
-                                : ""
-                        }`,
+                        text: `You are in a browser navigated to ${url}. ${goal}.`,
                     },
                     {
                         type: "input_image",
