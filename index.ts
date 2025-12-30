@@ -160,7 +160,8 @@ async function computerUseLoop(
         if (computerCalls.length === 0 && functionCallOutputs.length === 0) {
             console.debug("No computer or tool calls found. Final output:");
             console.debug(JSON.stringify(response.output, null, 2));
-            return response; // Exit when no computer calls are issued.
+
+            break; // Exit when no computer calls are issued.
         }
 
         let hasNewAction = false;
@@ -220,6 +221,8 @@ async function computerUseLoop(
             truncation: "auto",
         });
     }
+
+    return response;
 }
 
 async function verifyResponse(
@@ -343,9 +346,13 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
     });
 
     const finalResponse = await computerUseLoop(page, response);
+    console.debug("got out of test");
 
-    await browser.close();
+    browser.close();
+
+    console.debug("Verifying response");
+    const passed = await verifyResponse(finalResponse, goal);
 
     // TODO: how do we detect false?
-    return verifyResponse(finalResponse, goal);
+    return passed;
 }
