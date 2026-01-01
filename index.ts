@@ -1,7 +1,11 @@
 import OpenAI from "openai";
 import { chromium, type Page } from "playwright";
-import { faker } from "@faker-js/faker";
-import { v7 as uuid } from "uuid";
+import {
+    builtinTools,
+    handleFunctionCalls,
+    toolsForModelCall,
+    type ToolDefinition,
+} from "./tools";
 
 const openai = new OpenAI();
 
@@ -91,58 +95,10 @@ async function handleModelAction(
     }
 }
 
-const fakerTools: OpenAI.Responses.FunctionTool[] = [
-    {
-        type: "function",
-        name: "get_email",
-        strict: false,
-        description: "Generates an email address.",
-        parameters: {},
-    },
-    {
-        type: "function",
-        name: "get_name",
-        strict: false,
-        description: "Generates a person's full name.",
-        parameters: {},
-    },
-];
-
-// TODO: support all Faker functions
-function handleFunctionCalls(
-    response: OpenAI.Responses.Response
-): OpenAI.Responses.ResponseFunctionToolCallOutputItem[] {
-    const toolCalls = response.output.filter(
-        (item) => item.type === "function_call"
-    );
-    const functionCallOutputs = [];
-
-    for (const toolCall of toolCalls) {
-        if (toolCall.type === "function_call") {
-            functionCallOutputs.push({
-                id: toolCall.call_id.replace(/^call_/, "fc_"),
-                call_id: toolCall.call_id,
-                type: "function_call_output",
-                output: (() => {
-                    switch (toolCall.name) {
-                        case "get_email":
-                            return faker.internet.email();
-                        case "get_name":
-                            return faker.person.fullName();
-                        default:
-                            return `Unknown function: ${toolCall.name}`;
-                    }
-                })(),
-            });
-        }
-    }
-
-    return functionCallOutputs;
-}
-
 async function computerUseLoop(
     page: Page,
-    response: OpenAI.Responses.Response
+    response: OpenAI.Responses.Response,
+    availableTools: ToolDefinition[]
 ): Promise<[OpenAI.Responses.Response, any[]]> {
     /**
      * Run the loop that executes computer actions and tool calls until no 'computer_call' or 'function_call' is found.
@@ -152,7 +108,10 @@ async function computerUseLoop(
     while (true) {
         console.debug(response.output);
 
-        const functionCallOutputs = handleFunctionCalls(response);
+        const functionCallOutputs = handleFunctionCalls(
+            response,
+            availableTools
+        );
 
         const computerCalls = response.output.filter(
             (item) => item.type === "computer_call"
@@ -205,7 +164,7 @@ async function computerUseLoop(
                     display_height: 768,
                     environment: "browser",
                 },
-                ...fakerTools,
+                ...toolsForModelCall(availableTools),
             ],
             input: [
                 {
@@ -222,10 +181,6 @@ async function computerUseLoop(
             truncation: "auto",
         });
     }
-
-    // TODO: store this to skip forward next time
-    // console.debug("ALL Computer calls executed:");
-    // console.debug(JSON.stringify(computerCallStack, null, 2));
 
     return [response, computerCallStack];
 }
@@ -428,7 +383,11 @@ async function fastForwardComputerCallStack(
     return !!computerCallStack;
 }
 
-export async function e2e_test(url: string, goal: string): Promise<boolean> {
+export async function e2e_test(
+    url: string,
+    goal: string,
+    tools: ToolDefinition[] = []
+): Promise<boolean> {
     const openai = new OpenAI();
     const browser = await chromium.launch({
         headless: false,
@@ -467,6 +426,8 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
         return passed;
     }
 
+    const availableTools: ToolDefinition[] = [...builtinTools, ...tools];
+
     const response = await openai.responses.create({
         model: "computer-use-preview",
         tools: [
@@ -476,7 +437,7 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
                 display_height: displayHeight,
                 environment: "browser",
             },
-            ...fakerTools,
+            ...toolsForModelCall(availableTools),
         ],
         input: [
             {
@@ -507,7 +468,8 @@ export async function e2e_test(url: string, goal: string): Promise<boolean> {
 
     const [finalResponse, computerCallStack] = await computerUseLoop(
         page,
-        response
+        response,
+        availableTools
     );
 
     if (!restoredFromSavedStack) {
