@@ -8,6 +8,8 @@ import {
 } from "./tools";
 
 const openai = new OpenAI();
+const DISPLAY_WIDTH = 1280;
+const DISPLAY_HEIGHT = 720;
 
 async function handleModelAction(
     page: Page,
@@ -75,7 +77,7 @@ async function handleModelAction(
 
             case "wait": {
                 console.log(`Action: wait`);
-                await page.waitForTimeout(2000);
+                await page.waitForTimeout(3000);
                 break;
             }
 
@@ -160,8 +162,8 @@ async function computerUseLoop(
             tools: [
                 {
                     type: "computer_use_preview",
-                    display_width: 1024,
-                    display_height: 768,
+                    display_width: DISPLAY_WIDTH,
+                    display_height: DISPLAY_HEIGHT,
                     environment: "browser",
                 },
                 ...toolsForModelCall(availableTools),
@@ -375,7 +377,7 @@ async function fastForwardComputerCallStack(
             const action = call.action;
             if (action) {
                 await handleModelAction(page, action);
-                await new Promise((resolve) => setTimeout(resolve, 200)); // Allow time for changes to take effect.
+                await new Promise((resolve) => setTimeout(resolve, 500)); // Allow time for changes to take effect.
             }
         }
     }
@@ -383,12 +385,7 @@ async function fastForwardComputerCallStack(
     return !!computerCallStack;
 }
 
-export async function e2e_test(
-    url: string,
-    goal: string,
-    tools: ToolDefinition[] = []
-): Promise<boolean> {
-    const openai = new OpenAI();
+async function openBrowser(url: string): Promise<Page> {
     const browser = await chromium.launch({
         headless: false,
         chromiumSandbox: true,
@@ -406,8 +403,40 @@ export async function e2e_test(
     });
     await page.goto(url);
 
+    return page;
+}
+
+export async function continue_from(url: string, goal: string): Promise<Page> {
+    const page = await openBrowser(url);
+    const fastForwarded = await fastForwardComputerCallStack(url, goal, page);
+
+    if (!fastForwarded) {
+        throw new Error(
+            "No saved computer call stack found for the given URL and goal."
+        );
+    }
+
+    return page;
+}
+
+export async function e2e_test(
+    start_location: string | Page,
+    goal: string,
+    tools: ToolDefinition[] = []
+): Promise<boolean> {
+    const openai = new OpenAI();
+    let page: Page;
+
+    if (typeof start_location === "string") {
+        page = await openBrowser(start_location);
+    } else {
+        page = start_location;
+    }
+
+    const startUrl = page.url();
+
     const restoredFromSavedStack = await fastForwardComputerCallStack(
-        url,
+        startUrl,
         goal,
         page
     );
@@ -421,7 +450,7 @@ export async function e2e_test(
             screenshotBase64,
             goal
         );
-        browser.close();
+        // browser.close();
 
         return passed;
     }
@@ -433,8 +462,8 @@ export async function e2e_test(
         tools: [
             {
                 type: "computer_use_preview",
-                display_width: displayWidth,
-                display_height: displayHeight,
+                display_width: DISPLAY_WIDTH,
+                display_height: DISPLAY_HEIGHT,
                 environment: "browser",
             },
             ...toolsForModelCall(availableTools),
@@ -450,7 +479,7 @@ export async function e2e_test(
                 content: [
                     {
                         type: "input_text",
-                        text: `You are in a browser navigated to ${url}. ${goal}.`,
+                        text: `You are in a browser navigated to ${startUrl}. ${goal}.`,
                     },
                     {
                         type: "input_image",
@@ -473,10 +502,10 @@ export async function e2e_test(
     );
 
     if (!restoredFromSavedStack) {
-        await storeComputerCallStack(url, goal, computerCallStack);
+        await storeComputerCallStack(startUrl, goal, computerCallStack);
     }
 
-    browser.close();
+    // browser.close();
 
     console.debug("Verifying goal achieved");
     const passed = await verifyGoalAchieved(finalResponse, goal);
