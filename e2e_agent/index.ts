@@ -3,9 +3,6 @@ import { type ToolDefinition } from "./tools";
 import { canReplayActions } from "./memory";
 import { replayActions, testFromReplay, testFromScratch } from "./agent";
 
-const DISPLAY_WIDTH = 1280;
-const DISPLAY_HEIGHT = 720;
-
 async function openBrowser(url: string): Promise<Page> {
     const browser = await chromium.launch({
         headless: false,
@@ -14,8 +11,8 @@ async function openBrowser(url: string): Promise<Page> {
         args: ["--disable-extensions", "--disable-filesystem"],
     });
 
-    const displayWidth = DISPLAY_WIDTH;
-    const displayHeight = DISPLAY_HEIGHT;
+    const displayWidth = Number(process.env.DISPLAY_WIDTH);
+    const displayHeight = Number(process.env.DISPLAY_HEIGHT);
 
     const page = await browser.newPage();
     await page.setViewportSize({

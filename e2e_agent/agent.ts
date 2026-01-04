@@ -8,9 +8,6 @@ import {
 } from "./tools";
 import { getReplay, storeReplay } from "./memory";
 
-const DISPLAY_WIDTH = 1280;
-const DISPLAY_HEIGHT = 720;
-
 const openai = new OpenAI();
 
 async function handleModelAction(
@@ -164,8 +161,8 @@ async function computerUseLoop(
             tools: [
                 {
                     type: "computer_use_preview",
-                    display_width: DISPLAY_WIDTH,
-                    display_height: DISPLAY_HEIGHT,
+                    display_width: Number(process.env.DISPLAY_WIDTH),
+                    display_height: Number(process.env.DISPLAY_HEIGHT),
                     environment: "browser",
                 },
                 ...toolsForModelCall(availableTools),
@@ -368,8 +365,8 @@ export async function testFromScratch(
         tools: [
             {
                 type: "computer_use_preview",
-                display_width: DISPLAY_WIDTH,
-                display_height: DISPLAY_HEIGHT,
+                display_width: Number(process.env.DISPLAY_WIDTH),
+                display_height: Number(process.env.DISPLAY_HEIGHT),
                 environment: "browser",
             },
             ...toolsForModelCall(availableTools),
