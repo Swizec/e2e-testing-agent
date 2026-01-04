@@ -6,6 +6,7 @@ import {
     toolsForModelCall,
     type ToolDefinition,
 } from "./tools";
+import { canReplay, canReplayActions, getReplay, storeReplay } from "./storage";
 
 const openai = new OpenAI();
 const DISPLAY_WIDTH = 1280;
@@ -303,70 +304,12 @@ async function verifyGoalAchievedFromScreenshot(
     return answer.includes("yes") && !answer.includes("no");
 }
 
-async function storeComputerCallStack(
-    url: string,
-    goal: string,
-    computerCallStack: any[]
-) {
-    /**
-     * Store the computer call stack for future reference.
-     */
-    // write to a file named with a md5 hash of the url and goal
-    const fs = await import("fs/promises");
-    const crypto = await import("crypto");
-
-    const hash = crypto
-        .createHash("md5")
-        .update(url + goal)
-        .digest("hex");
-    const filename = `computer_call_stacks/${hash}.json`;
-
-    await fs.mkdir("computer_call_stacks", { recursive: true });
-    await fs.writeFile(
-        filename,
-        JSON.stringify(
-            {
-                url,
-                goal,
-                computerCallStack,
-            },
-            null,
-            2
-        )
-    );
-}
-
-async function restoreComputerCallStack(
-    url: string,
-    goal: string
-): Promise<any[] | null> {
-    /**
-     * Restore the computer call stack if it exists.
-     */
-    const fs = await import("fs/promises");
-    const crypto = await import("crypto");
-
-    const hash = crypto
-        .createHash("md5")
-        .update(url + goal)
-        .digest("hex");
-    const filename = `computer_call_stacks/${hash}.json`;
-
-    try {
-        const data = await fs.readFile(filename, "utf-8");
-        const parsed = JSON.parse(data);
-        return parsed.computerCallStack;
-    } catch (e) {
-        return null;
-    }
-}
-
-async function fastForwardComputerCallStack(
+async function replayActions(
     url: string,
     goal: string,
     page: Page
 ): Promise<boolean> {
-    const computerCallStack = await restoreComputerCallStack(url, goal);
+    const computerCallStack = await getReplay(url, goal);
 
     if (computerCallStack) {
         console.debug(
@@ -408,9 +351,9 @@ async function openBrowser(url: string): Promise<Page> {
 
 export async function continue_from(url: string, goal: string): Promise<Page> {
     const page = await openBrowser(url);
-    const fastForwarded = await fastForwardComputerCallStack(url, goal, page);
+    const replayed = await replayActions(url, goal, page);
 
-    if (!fastForwarded) {
+    if (!replayed) {
         throw new Error(
             "No saved computer call stack found for the given URL and goal."
         );
@@ -419,43 +362,39 @@ export async function continue_from(url: string, goal: string): Promise<Page> {
     return page;
 }
 
-export async function e2e_test(
-    start_location: string | Page,
-    goal: string,
-    tools: ToolDefinition[] = []
-): Promise<boolean> {
-    const openai = new OpenAI();
-    let page: Page;
-
-    if (typeof start_location === "string") {
-        page = await openBrowser(start_location);
-    } else {
-        page = start_location;
-    }
-
-    const startUrl = page.url();
-
-    const restoredFromSavedStack = await fastForwardComputerCallStack(
-        startUrl,
-        goal,
-        page
-    );
-
+async function takeScreenshotAsBase64(page: Page): Promise<string> {
     const screenshotBytes = await page.screenshot();
     const screenshotBase64 = Buffer.from(screenshotBytes).toString("base64");
+    return screenshotBase64;
+}
 
-    if (restoredFromSavedStack) {
-        console.debug("Verifying goal achieved");
-        const passed = await verifyGoalAchievedFromScreenshot(
-            screenshotBase64,
-            goal
-        );
-        // browser.close();
+async function testFromReplay(
+    url: string,
+    goal: string,
+    page: Page
+): Promise<boolean> {
+    await replayActions(url, goal, page);
+    const screenshotBase64 = await takeScreenshotAsBase64(page);
 
-        return passed;
-    }
+    const passed = await verifyGoalAchievedFromScreenshot(
+        screenshotBase64,
+        goal
+    );
+    // browser.close();
 
+    return passed;
+}
+
+async function testFromScratch(
+    url: string,
+    goal: string,
+    page: Page,
+    tools: ToolDefinition[]
+): Promise<boolean> {
+    const openai = new OpenAI();
     const availableTools: ToolDefinition[] = [...builtinTools, ...tools];
+
+    const screenshotBase64 = await takeScreenshotAsBase64(page);
 
     const response = await openai.responses.create({
         model: "computer-use-preview",
@@ -479,7 +418,7 @@ export async function e2e_test(
                 content: [
                     {
                         type: "input_text",
-                        text: `You are in a browser navigated to ${startUrl}. ${goal}.`,
+                        text: `You are in a browser navigated to ${url}. ${goal}.`,
                     },
                     {
                         type: "input_image",
@@ -501,9 +440,7 @@ export async function e2e_test(
         availableTools
     );
 
-    if (!restoredFromSavedStack) {
-        await storeComputerCallStack(startUrl, goal, computerCallStack);
-    }
+    await storeReplay(url, goal, computerCallStack);
 
     // browser.close();
 
@@ -511,4 +448,26 @@ export async function e2e_test(
     const passed = await verifyGoalAchieved(finalResponse, goal);
 
     return passed;
+}
+
+export async function e2e_test(
+    start_location: string | Page,
+    goal: string,
+    tools: ToolDefinition[] = []
+): Promise<boolean> {
+    let page: Page;
+
+    if (typeof start_location === "string") {
+        page = await openBrowser(start_location);
+    } else {
+        page = start_location;
+    }
+
+    const startUrl = page.url();
+
+    if (await canReplayActions(startUrl, goal)) {
+        return await testFromReplay(startUrl, goal, page);
+    } else {
+        return await testFromScratch(startUrl, goal, page, tools);
+    }
 }

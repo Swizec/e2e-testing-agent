@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { e2e_test } from ".";
+import { e2e_test } from "./e2e_agent";
 
 test("supports email signup", async () => {
     const success = await e2e_test(
