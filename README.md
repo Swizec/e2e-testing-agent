@@ -11,7 +11,7 @@ Goal is to make e2e testing ergonomic to use and cheap to update when things cha
 
 Here's an example of verifying a checkout flow. The agent figured it out from scratch on first run and recorded every action. Subsequent runs replay those actions on your page and check everything still works.
 
-[![](https://s3.amazonaws.com/techletter.app/screenshot-1767579154979.png)](https://x.com/Swizec/status/2006748633425985776)
+<a href="https://x.com/Swizec/status/2006748633425985776"><img width="1096" height="1268" alt="screenshot-1767579154979" src="https://github.com/user-attachments/assets/bf055872-906b-4e2e-8725-e22883901175" /></a>
 
 You specify the test in plain language. No fiddly Playwright commands, cumbersome testing code to write, or messing around with the DOM – your tests are fully declarative and goal oriented.
 
