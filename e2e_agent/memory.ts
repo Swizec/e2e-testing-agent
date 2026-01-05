@@ -37,8 +37,9 @@ function getFilename(url: string, goal: string): string {
         .update(url.replace(/\/$/, "") + goal)
         .digest("hex");
 
-    const testFilename = getCallingTestFilename();
-    const filename = `test_replays/${testFilename}/${hash}.json`;
+    // const testFilename = getCallingTestFilename();
+    // TODO: use more human readable filenames
+    const filename = `test_replays/${hash}.json`;
 
     return filename;
 }
