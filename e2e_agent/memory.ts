@@ -7,7 +7,7 @@ function getFilename(url: string, goal: string): string {
         .update(url + goal)
         .digest("hex");
 
-    const filename = `computer_call_stacks/${hash}.json`;
+    const filename = `test_replays/${hash}.json`;
 
     return filename;
 }
@@ -22,7 +22,7 @@ export async function storeReplay(
      */
     const filename = getFilename(url, goal);
 
-    await fs.mkdir("computer_call_stacks", { recursive: true });
+    await fs.mkdir("test_replays", { recursive: true });
     await fs.writeFile(
         filename,
         JSON.stringify(
