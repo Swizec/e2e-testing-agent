@@ -34,7 +34,7 @@ function getCallingTestFilename() {
 function getFilename(url: string, goal: string): string {
     const hash = crypto
         .createHash("md5")
-        .update(url + goal)
+        .update(url.replace(/\/$/, "") + goal)
         .digest("hex");
 
     const testFilename = getCallingTestFilename();
@@ -79,6 +79,8 @@ export async function getReplay(
      * Restore the computer call stack if it exists.
      */
     const filename = getFilename(url, goal);
+
+    console.debug({ url, goal, filename });
 
     try {
         const data = await fs.readFile(filename, "utf-8");
