@@ -60,6 +60,8 @@ async function handleModelAction(
                         await page.keyboard.press("Enter");
                     } else if (k.includes("SPACE")) {
                         await page.keyboard.press(" ");
+                    } else if (k.includes("CMD")) {
+                        await page.keyboard.press("ControlOrMeta");
                     } else {
                         await page.keyboard.press(k);
                     }
